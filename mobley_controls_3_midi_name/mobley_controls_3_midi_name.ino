@@ -18,7 +18,7 @@ byte switch_pins[2] = {31, 32};
 byte led_pins[8] = {18, 16, 20, 21, 17, 19, 23, 22};
 byte button_cc[2][8] = {{12, 14, 16, 17, 18, 20, 22, 24}, {12, 15, 16, 17, 19, 21, 23, 25}};
 byte enc_cc [2][8] = {{26, 28, 30, 32, 34, 36, 38, 40}, {27, 29, 31, 33, 35, 37, 39, 41}};
-byte button_cc_latch[8] = {255, 0, 255, 255, 255, 255, 0, 0}; //iff 0 its a latch 255 for monetary 
+byte button_cc_latch[8] = {255, 0, 255, 255, 255, 255, 0, 0}; //iff 0 its a latch 255 for monetary
 byte cc_layer, cc_clutch;
 byte layer_sw, clutch_sw;
 byte bread[8], pbread[8];
@@ -37,8 +37,12 @@ byte ccin[2] = {103, 102};
 byte ccin_read[2];
 byte cc_led[2], cc_color[2];
 byte enc_step;
-byte enc_step_high=2;
+byte enc_step_high = 4;
 #define LED_PIN  6
+
+int enc_state[9];
+int enc_latch[9];
+uint32_t enc_timer[9];
 
 #define COLOR_ORDER RGB
 #define CHIPSET     WS2812B
@@ -84,29 +88,38 @@ void loop() {
   if (ct - pt[1] > 10) {
     pt[1] = ct;
 
-    pread[0] = cread[0];
-    cread[0] = myenc0.read();
+    for (byte f = 0; f < 8; f++) {
+      pread[f] = cread[f];
+      cread[f] = read_encoder(f);
+      if (ct - enc_timer[f] > 500) {
+        enc_state[f] = 0;
+      }
+      if (ct - enc_timer[f] < 500) {
+        if (pread[f] > cread[f] ) {
 
-    pread[1] = cread[1];
-    cread[1] = myenc1.read();
+          if (enc_state[f] >= 1) {
+            enc_state[f] = 2;
+          }
+          if (enc_state[f] < 1) {
+            enc_state[f] = 1;
+          }
+        }
+        if (pread[f] < cread[f] ) {
 
-    pread[2] = cread[2];
-    cread[2] = myenc2.read();
+          if (enc_state[f] <= -1) {
+            enc_state[f] = -2;
+          }
+          if (enc_state[f] > -1) {
+            enc_state[f] = -1;
+          }
+        }
+      }
+      if (pread[f] != cread[f]) {
+        enc_timer[f] = ct;
+        //  enc_state[f] = 0;
 
-    pread[3] = cread[3];
-    cread[3] = myenc3.read();
-
-    pread[4] = cread[4];
-    cread[4] = myenc4.read();
-
-    pread[5] = cread[5];
-    cread[5] = myenc5.read();
-
-    pread[6] = cread[6];
-    cread[6] = myenc6.read();
-
-    pread[7] = cread[7];
-    cread[7] = myenc7.read();
+      }
+    }
 
     pswread[0] = swread[0];
     swread[0] = digitalRead(switch_pins[0]);
@@ -158,7 +171,7 @@ void loop() {
       // Serial.print(j);    Serial.print("-");    Serial.print(bread[j]);    Serial.print("  ");
 
       if (clutch_sw == 1) {
-        enc_step=1;
+        enc_step = 1;
         if (j == 0) {
           if (pbread[j] == 0 && bread[j] == 1) {
             usbMIDI.sendControlChange(layerbutt, 1, channel);
@@ -172,7 +185,7 @@ void loop() {
       }
 
       if (clutch_sw == 0) {
-        enc_step=enc_step_high;
+        enc_step = enc_step_high;
         if (pbread[j] == 0 && bread[j] == 1) {
           if (layer_sw == 0) {
             usbMIDI.sendControlChange(button_cc[0][j], 1, channel);
@@ -233,16 +246,18 @@ void loop() {
     for (byte i = 0; i < 8; i++) {
       byte ccc = 0;
 
-      if (cread[i] < pread[i]) {
-        midi_enc[layer_sw][i]-=enc_step;
+      if (enc_state[i] == -2) {
+        midi_enc[layer_sw][i] -= enc_step;
+        enc_state[i] = -1;
         ccc = 1;
         if (midi_enc[layer_sw][i] < 0) {
           midi_enc[layer_sw][i] = 0;
         }
         //Serial.print(i);        Serial.print("- ");        Serial.println(midi_enc[layer_sw][i]);
       }
-      if (cread[i] > pread[i]) {
-        midi_enc[layer_sw][i]+=enc_step;
+      if (enc_state[i] == 2) {
+        midi_enc[layer_sw][i] += enc_step;
+        enc_state[i] = 1;
         ccc = 1;
 
         if (midi_enc[layer_sw][i] > 127) {
@@ -261,37 +276,29 @@ void loop() {
 
   if (ct - pt[3] > 200 && 1 == 0) {
     pt[3] = ct;
-    //swread[0] = digitalRead(switch_pins[0]);
-    ///swread[1] = digitalRead(switch_pins[1]);
-    /*
-      Serial.print("clutch- ");
-      Serial.println(clutch_sw);
-      Serial.print("layer- ");
-      Serial.println(layer_sw);
-      Serial.println();
-    */
-    Serial.println(sync_c);
+
+    Serial.println(enc_state[0]);
 
   }
 
-  if (ct - pt[2] > 20) {  
+  if (ct - pt[2] > 20) {
     pt[2] = ct;
 
     if (osc_latch[0] == 1) { //make this larger to go faster up
       osc[0] *= 1.03;
     }
-    if (osc_latch[0] == 0) { 
+    if (osc_latch[0] == 0) {
       osc[0] *= .98;
     }
 
-    if (osc[0] > 100) {  /// 255 is max 
+    if (osc[0] > 100) {  /// 255 is max
       osc_latch[0] = 0;
     }
     if (osc[0] < 10) {
       osc[0] = 10;
       osc_latch[0] = 1;
     }
-    analogWrite(30, osc[0]*sync_led); //with clock sync 
+    analogWrite(30, osc[0]*sync_led); //with clock sync
     //analogWrite(30, osc[0]); //just breath
   }
 
@@ -327,7 +334,7 @@ void loop() {
       sync_c = 0;
     }
 
-    if (t == 248) {    //clock 
+    if (t == 248) {    //clock
       // if (d1 == 76) {}
       sync_led = 1;
       sync_c++;
@@ -344,7 +351,7 @@ void loop() {
 
   if (ct - pt[4] > 40) {   //output to leds
     pt[4] = ct;
-    static byte sat = 230; 
+    static byte sat = 230;
     static byte bright = 80; //out of 255
 
     for (byte h = 0; h < 2; h++) {
@@ -374,4 +381,34 @@ void loop() {
   }
 
 
+}
+
+
+int16_t read_encoder(byte n) {
+  switch (n) {
+    case 0:
+      return myenc0.read();
+      break;
+    case 1:
+      return myenc1.read();
+      break;
+    case 2:
+      return myenc2.read();
+      break;
+    case 3:
+      return myenc3.read();
+      break;
+    case 4:
+      return myenc4.read();
+      break;
+    case 5:
+      return myenc5.read();
+      break;
+    case 6:
+      return myenc6.read();
+      break;
+    case 7:
+      return myenc7.read();
+      break;
+  }
 }
