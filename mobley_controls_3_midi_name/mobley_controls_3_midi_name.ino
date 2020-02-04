@@ -18,7 +18,7 @@ byte switch_pins[2] = {31, 32};
 byte led_pins[8] = {18, 16, 20, 21, 17, 19, 23, 22};
 byte button_cc[2][8] = {{12, 14, 16, 17, 18, 20, 22, 24}, {12, 15, 16, 17, 19, 21, 23, 25}};
 byte enc_cc [2][8] = {{26, 28, 30, 32, 34, 36, 38, 40}, {27, 29, 31, 33, 35, 37, 39, 41}};
-byte button_cc_latch[8] = {255, 0, 255, 255, 255, 255, 0, 0}; //iff 0 its a latch 255 for monetary
+byte button_cc_latch[8] = {255, 255, 255, 255, 255, 255, 255, 255}; //iff 0 its a latch 255 for monetary
 byte cc_layer, cc_clutch;
 byte layer_sw, clutch_sw;
 byte bread[8], pbread[8];
@@ -247,21 +247,21 @@ void loop() {
       byte ccc = 0;
 
       if (enc_state[i] == -2) {
-        midi_enc[layer_sw][i] -= enc_step;
+        midi_enc[layer_sw][i] += enc_step;
         enc_state[i] = -1;
         ccc = 1;
-        if (midi_enc[layer_sw][i] < 0) {
-          midi_enc[layer_sw][i] = 0;
+        if (midi_enc[layer_sw][i] > 127) {
+          midi_enc[layer_sw][i] = 127;
         }
         //Serial.print(i);        Serial.print("- ");        Serial.println(midi_enc[layer_sw][i]);
       }
       if (enc_state[i] == 2) {
-        midi_enc[layer_sw][i] += enc_step;
+        midi_enc[layer_sw][i] -= enc_step;
         enc_state[i] = 1;
         ccc = 1;
 
-        if (midi_enc[layer_sw][i] > 127) {
-          midi_enc[layer_sw][i] = 127;
+        if (midi_enc[layer_sw][i] < 0) {
+          midi_enc[layer_sw][i] = 0;
         }
 
         //  Serial.print(i);        Serial.print("- ");        Serial.println(midi_enc[layer_sw][i]);
@@ -280,25 +280,24 @@ void loop() {
     Serial.println(enc_state[0]);
 
   }
-
-  if (ct - pt[2] > 20) {
+  if (ct - pt[2] > 20) {  
     pt[2] = ct;
 
     if (osc_latch[0] == 1) { //make this larger to go faster up
       osc[0] *= 1.03;
     }
-    if (osc_latch[0] == 0) {
+    if (osc_latch[0] == 0) { 
       osc[0] *= .98;
     }
 
-    if (osc[0] > 100) {  /// 255 is max
+    if (osc[0] > 255) {  /// 255 is max 
       osc_latch[0] = 0;
     }
     if (osc[0] < 10) {
       osc[0] = 10;
       osc_latch[0] = 1;
     }
-    analogWrite(30, osc[0]*sync_led); //with clock sync
+    analogWrite(30, osc[0]*sync_led); //with clock sync 
     //analogWrite(30, osc[0]); //just breath
   }
 
@@ -351,13 +350,17 @@ void loop() {
 
   if (ct - pt[4] > 40) {   //output to leds
     pt[4] = ct;
-    static byte sat = 230;
-    static byte bright = 80; //out of 255
+    static byte sat = 255; // out of 255 (originally set to 230)
+    static byte bright = 200; //out of 255 (originally set to 80)
 
     for (byte h = 0; h < 2; h++) {
-
+      //for (byte h = 1; h < 2; h++) {
       if (ccin_read[h] == 0) {
-        apaleds[h].setHSV(0, 0, 0);
+        if (h == 0) {
+          apaleds[h].setHSV(0, sat, bright);
+        } else {
+          apaleds[h].setRGB(bright, bright, bright);
+        }
       }
       if (ccin_read[h] == 1) {//red
         apaleds[h].setHSV(0, sat, bright);
@@ -371,9 +374,20 @@ void loop() {
       if (ccin_read[h] == 4) {//white
         apaleds[h].setRGB(35 * (bright / 90.00), 50 * (bright / 90.00), 50 * (bright / 90.00));
       }
-      if (ccin_read[h] > 4) { //purple
-        apaleds[h].setHSV(190,  sat, bright);
+      if (ccin_read[h] == 5) {
+        apaleds[h].setHSV(0, 0, 0);
       }
+      if (ccin_read[h] > 5) {
+        apaleds[h].setRGB(bright, bright, 0); //yellow
+        //apaleds[h].setHSV(190,  sat, bright);//purple
+      }
+
+      if (layer_sw == 1) { //layer switch indicator
+        apaleds[1].setRGB(0, 0, bright);
+      }
+
+
+
     }
 
     FastLED.show();
